@@ -47,16 +47,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Please check the form and try again.", fieldErrors }, { status: 422 });
     }
 
-        const existing = await prisma.feeStructure.findUnique({
-      where: {
-        academicYearId_termId_classId_categoryId: {
-          academicYearId: parsed.data.academicYearId,
-          termId: parsed.data.termId ?? null,
-          classId: parsed.data.classId ?? null,
-          categoryId: parsed.data.categoryId,
-        } as any,               // ← add this
-      },
-    });
+    const existing = await prisma.feeStructure.findUnique({
+  where: {
+    academicYearId_termId_classId_categoryId: {
+      academicYearId: parsed.data.academicYearId,
+      termId: parsed.data.termId ?? null,
+      classId: parsed.data.classId ?? null,
+      categoryId: parsed.data.categoryId,
+    } as any,                 // ← add this
+  },
+});
 
     if (existing) {
       return NextResponse.json(
