@@ -1,0 +1,1028 @@
+// Burhaanudeen Islamic School — Database Schema
+// PostgreSQL is the default database (see docker-compose.yml for local
+// dev, README for setup). SQLite remains available as an optional
+// low-friction fallback (src/lib/prisma.ts / prisma.config.ts pick the
+// adapter from DATABASE_URL's scheme) — but the schema targets
+// PostgreSQL, so avoid Postgres-incompatible features here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// ACCESS CONTROL
+// ---------------------------------------------------------------------------
+
+enum RoleName {
+  SUPER_ADMIN
+  PROPRIETOR
+  HEADTEACHER
+  ADMISSIONS_OFFICER
+  BURSAR
+  TEACHER
+  PARENT
+}
+
+model Role {
+  id          String     @id @default(cuid())
+  name        RoleName   @unique
+  label       String
+  description String
+  users       UserRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String
+  email         String     @unique
+  passwordHash  String
+  isActive      Boolean    @default(true)
+  emailVerified DateTime?
+  image         String?
+
+  roles         UserRole[]
+  staffProfile  Staff?
+  auditLogs     AuditLog[]
+  guardianOf    Guardian[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserRole {
+  id     String   @id @default(cuid())
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  role   Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId String
+
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  String? // JSON-encoded details
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// SCHOOL / SITE CONFIGURATION
+// ---------------------------------------------------------------------------
+
+// Singleton-style table (one row) holding configurable school & site info.
+model SchoolSettings {
+  id String @id @default(cuid())
+
+  name        String  @default("Burhaanudeen Islamic School")
+  motto       String  @default("Knowledge, Faith, Excellence")
+  logoUrl     String?
+  description String  @default("A center of academic excellence and Islamic values in Sang, Mion District, Ghana.")
+  vision      String  @default("To raise a generation of knowledgeable, disciplined and God-conscious learners.")
+  mission     String  @default("To provide holistic Islamic and academic education that nurtures character, competence and community.")
+  history     String  @default("")
+  coreValues  String  @default("Faith,Integrity,Excellence,Discipline,Community") // comma-separated
+
+  address     String  @default("Sang, Mion District, Northern Region, Ghana")
+  town        String  @default("Sang")
+  district    String  @default("Mion District")
+  region      String  @default("Northern Region")
+  country     String  @default("Ghana")
+  phone       String  @default("")
+  altPhone    String  @default("")
+  email       String  @default("")
+  website     String  @default("")
+  mapEmbedUrl String  @default("")
+
+  admissionFormFee   Decimal @default(0)
+  momoNumber         String  @default("")
+  momoNetwork        String  @default("")
+  momoAccountName    String  @default("")
+
+  facebookUrl  String @default("")
+  twitterUrl   String @default("")
+  instagramUrl String @default("")
+
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  title       String
+  slug        String    @unique
+  body        String
+  category    String    @default("General")
+  isPublished Boolean   @default(false)
+  isPrivate   Boolean   @default(false) // true = staff/parent portals only, never the public site
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String
+  location    String   @default("")
+  startsAt    DateTime
+  endsAt      DateTime?
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model GalleryImage {
+  id          String   @id @default(cuid())
+  title       String
+  imageUrl    String
+  caption     String   @default("")
+  category    String   @default("General")
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String   @default("")
+  subject   String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// ACADEMIC STRUCTURE FOUNDATION
+// ---------------------------------------------------------------------------
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  name      String   @unique // e.g. "2025/2026"
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+
+  terms    Term[]
+  students Student[]
+  classes  Class[]
+  applications Application[]
+  feeStructures  FeeStructure[]
+  feeAssignments StudentFeeAssignment[]
+  payments       Payment[]
+  attendances    Attendance[]
+  assessments    Assessment[]
+  promotionBatches PromotionBatch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Term {
+  id             String       @id @default(cuid())
+  name           String // e.g. "Term 1"
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  academicYearId String
+  startDate      DateTime
+  endDate        DateTime
+  isCurrent      Boolean      @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  feeStructures  FeeStructure[]
+  feeAssignments StudentFeeAssignment[]
+  payments       Payment[]
+  attendances    Attendance[]
+  assessments    Assessment[]
+
+  @@unique([academicYearId, name])
+}
+
+enum SchoolSection {
+  CRECHE
+  PRIMARY
+  JHS
+}
+
+model Class {
+  id             String        @id @default(cuid())
+  name           String // e.g. "Creche 1", "Primary 4", "JHS 2"
+  section        SchoolSection
+  level          Int           @default(0) // sort order: Creche < KG < Primary 1..6 < JHS 1..3
+  capacity       Int           @default(40)
+  isActive       Boolean       @default(true)
+
+  // Required (not optional) — a class belongs to exactly one academic
+  // year, and class names are only unique within that year (D2: a
+  // global @@unique([name]) would collide once "Primary 1" recurs
+  // next year). Restrict rather than Cascade/SetNull: deleting a year
+  // that still has classes should fail loudly, not silently orphan them.
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  academicYearId String
+  classTeacher   Staff?        @relation("ClassTeacher", fields: [classTeacherId], references: [id], onDelete: SetNull)
+  classTeacherId String?
+
+  students Student[]
+  subjects ClassSubject[]
+  feeStructures FeeStructure[]
+  attendances    Attendance[]
+  promotionsFrom PromotionBatch[]  @relation("PromotionFromClass")
+  promotionsInto PromotionRecord[] @relation("PromotionToClass")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academicYearId, name])
+}
+
+model Subject {
+  id      String         @id @default(cuid())
+  name    String         @unique
+  code    String         @unique
+  // Optional section this subject is aimed at (e.g. a JHS-only subject
+  // like "Integrated Science"). Configurable, not required — many
+  // subjects (e.g. "Mathematics") span every section.
+  level   SchoolSection?
+  isActive Boolean       @default(true)
+  classes ClassSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// "This subject is taught in this class" — the class-subject
+// assignment referenced throughout Phase 4 (teacher assignment,
+// assessments, results all key off this join, not off Class/Subject
+// directly, since a subject can be taught differently per class).
+model ClassSubject {
+  id        String  @id @default(cuid())
+  class     Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId   String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subjectId String
+
+  teachers    TeacherSubject[]
+  assessments Assessment[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([classId, subjectId])
+}
+
+// ---------------------------------------------------------------------------
+// PEOPLE
+// ---------------------------------------------------------------------------
+
+enum StaffCategory {
+  TEACHING
+  NON_TEACHING
+  MANAGEMENT
+}
+
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+  RESIGNED
+  TERMINATED
+  RETIRED
+}
+
+model Staff {
+  id            String        @id @default(cuid())
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String        @unique
+  staffNumber   String        @unique
+  category      StaffCategory
+  position      String
+  photoUrl      String?
+  email         String        @default("")
+  phone         String        @default("")
+  address       String        @default("")
+  gender        String        @default("")
+  dateJoined    DateTime      @default(now())
+  status        StaffStatus   @default(ACTIVE)
+  // Salary configuration placeholder — Payroll (Phase 3) reads/writes
+  // this; nothing in Phase 2 computes pay from it.
+  salaryNote    String        @default("")
+
+  classesLed    Class[]       @relation("ClassTeacher")
+  salaries       Salary[]
+  payrollEntries PayrollEntry[]
+  subjectAssignments TeacherSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum StudentStatus {
+  APPLICANT
+  ACCEPTED
+  ENROLLED
+  ACTIVE
+  SUSPENDED
+  WITHDRAWN
+  TRANSFERRED
+  GRADUATED
+  EXPELLED
+}
+
+// Student.admissionNumber is the school's permanent, never-reused
+// unique identifier for the student (spec calls this both "Student ID"
+// and "Admission number" — one and the same value here, format
+// BIS-{year}-{00001}, generated by lib/ids.ts). Historical records are
+// never deleted when a student leaves — status changes instead.
+model Student {
+  id              String   @id @default(cuid())
+  admissionNumber String   @unique
+
+  firstName  String
+  lastName   String
+  otherNames String @default("")
+  photoUrl   String?
+  gender     String
+  dateOfBirth DateTime
+  nationality String  @default("Ghanaian")
+  address     String  @default("")
+
+  guardianName          String
+  guardianPhone         String
+  guardianEmail         String @default("")
+  emergencyContactName  String @default("")
+  emergencyContactPhone String @default("")
+  previousSchool        String @default("")
+
+  admissionDate DateTime @default(now())
+
+  class          Class?        @relation(fields: [classId], references: [id], onDelete: SetNull)
+  classId        String?
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  academicYearId String?
+  status         StudentStatus @default(ACTIVE)
+
+  // Set when this student originated from the online admissions
+  // pipeline; null for students entered directly (e.g. transfers,
+  // CSV import) so future modules can still trace either path.
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  applicationId String?      @unique
+
+  documents     StudentDocument[]
+  statusHistory StudentStatusHistory[]
+  feeAssignments StudentFeeAssignment[]
+  payments       Payment[]
+  attendances    Attendance[]
+  results        Result[]
+  promotionRecords PromotionRecord[]
+  guardians      Guardian[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StudentStatusHistory {
+  id        String        @id @default(cuid())
+  student   Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  fromStatus StudentStatus?
+  toStatus  StudentStatus
+  note      String        @default("")
+  changedById String?
+  createdAt DateTime      @default(now())
+}
+
+model StudentDocument {
+  id        String   @id @default(cuid())
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  name      String // e.g. "Birth Certificate"
+  url       String  @default("") // external link (e.g. Drive) until file storage is added
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// ADMISSIONS PIPELINE
+// ---------------------------------------------------------------------------
+// Flow: SUBMITTED (buy/apply) -> payment claim submitted -> admin
+// verifies payment -> UNDER_REVIEW -> INTERVIEW_REQUIRED / ACCEPTED /
+// REJECTED -> (on ACCEPTED) admission letter available -> ENROLLED,
+// which creates the Student record. See src/lib/admissions.ts for the
+// transition rules enforced in code.
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  INTERVIEW_REQUIRED
+  ACCEPTED
+  REJECTED
+  ENROLLED
+  WITHDRAWN
+}
+
+enum PaymentClaimStatus {
+  NOT_SUBMITTED
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+}
+
+model Application {
+  id                String   @id @default(cuid())
+  applicationNumber String   @unique // e.g. BIS-2027-00125
+
+  firstName  String
+  lastName   String
+  otherNames String @default("")
+  gender     String
+  dateOfBirth DateTime
+  nationality String @default("Ghanaian")
+  address     String @default("")
+
+  guardianName          String
+  guardianPhone         String
+  guardianEmail         String @default("")
+  emergencyContactName  String @default("")
+  emergencyContactPhone String @default("")
+  previousSchool        String @default("")
+
+  levelAppliedFor String        // e.g. "Primary 3" — free text, matched to a Class at enrollment
+  section         SchoolSection
+  academicYear    AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  academicYearId  String?
+
+  status      ApplicationStatus @default(SUBMITTED)
+  adminNotes  String            @default("") // NEVER exposed on the public status checker
+  decisionReason String         @default("")
+  reviewedById   String?
+  reviewedAt     DateTime?
+
+  paymentClaim PaymentClaim?
+  documents    ApplicationDocument[]
+  student      Student?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentClaim {
+  id            String              @id @default(cuid())
+  application   Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String              @unique
+
+  payerName     String
+  payerPhone    String
+  network       String  @default("")
+  amount        Decimal
+  reference     String  @unique
+  paidAt        DateTime
+  screenshotUrl String? // optional external link until file storage is added
+
+  status           PaymentClaimStatus @default(PENDING_VERIFICATION)
+  verificationNote String             @default("")
+  verifiedById     String?
+  verifiedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApplicationDocument {
+  id            String      @id @default(cuid())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  name          String // e.g. "Birth Certificate"
+  url           String  @default("")
+  createdAt     DateTime @default(now())
+}
+
+// Guarantees gap-free, never-reused sequential numbers for Student and
+// Application IDs even under concurrent requests — see lib/ids.ts.
+model IdSequence {
+  id     String @id // e.g. "student-2027", "application-2027"
+  nextValue Int  @default(1)
+}
+
+// ---------------------------------------------------------------------------
+// FINANCE — FEES
+// ---------------------------------------------------------------------------
+
+// Configurable, not hard-coded — administrators can add categories
+// beyond the starter set (Tuition, Feeding, Books, Uniform, Transport,
+// Examination, Registration, Other) seeded on first run.
+model FeeCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String   @default("")
+  isActive    Boolean  @default(true)
+
+  structures FeeStructure[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// "For this academic year + term + class + category, the fee is X."
+// Amounts here are the current/live configuration; StudentFeeAssignment
+// snapshots the amount at assignment time so a later edit here never
+// silently changes what an already-assigned student owes.
+model FeeStructure {
+  id             String       @id @default(cuid())
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  academicYearId String
+  term           Term?        @relation(fields: [termId], references: [id], onDelete: Restrict)
+  termId         String?
+  class          Class?       @relation(fields: [classId], references: [id], onDelete: Restrict)
+  classId        String?
+  category       FeeCategory  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId     String
+  amount         Decimal
+  isActive       Boolean      @default(true)
+
+  assignments StudentFeeAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academicYearId, termId, classId, categoryId])
+}
+
+// The "expected" side of a student's fee ledger — one row per fee
+// line item assigned to a student for a term. `amount` is a snapshot
+// taken from FeeStructure.amount at assignment time (financial
+// integrity: a fee structure edit afterward must never retroactively
+// change what a student already owes).
+model StudentFeeAssignment {
+  id             String        @id @default(cuid())
+  student        Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId      String
+  feeStructure   FeeStructure? @relation(fields: [feeStructureId], references: [id], onDelete: SetNull)
+  feeStructureId String?
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  academicYearId String
+  term           Term?         @relation(fields: [termId], references: [id], onDelete: Restrict)
+  termId         String?
+  categoryName   String // snapshot of FeeCategory.name at assignment time
+  amount         Decimal // snapshot of FeeStructure.amount at assignment time
+  assignedById   String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, feeStructureId])
+}
+
+enum PaymentMethod {
+  CASH
+  MOMO
+  BANK
+  OTHER
+}
+
+enum PaymentStatus {
+  COMPLETED
+  REVERSED
+}
+
+// The "paid" side of a student's fee ledger. Never edited or deleted
+// once created — a mistaken payment is corrected by reversing it
+// (status -> REVERSED, plus a PaymentReversal record explaining why),
+// never by silently changing the amount/date/etc on the original row.
+model Payment {
+  id             String        @id @default(cuid())
+  student        Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  studentId      String
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  academicYearId String?
+  term           Term?         @relation(fields: [termId], references: [id], onDelete: SetNull)
+  termId         String?
+
+  amount      Decimal
+  date        DateTime
+  method      PaymentMethod
+  reference   String        @default("")
+  description String        @default("")
+  status      PaymentStatus @default(COMPLETED)
+
+  recordedById String?
+  recordedAt   DateTime @default(now())
+
+  reversal PaymentReversal?
+
+  @@index([studentId])
+}
+
+model PaymentReversal {
+  id          String   @id @default(cuid())
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  paymentId   String   @unique
+  reason      String
+  reversedById String?
+  createdAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// FINANCE — REVENUE (non-fee income; student fee payments are revenue
+// too but are tracked via Payment above — see lib/finance.ts for the
+// combined total, which is careful not to double-count)
+// ---------------------------------------------------------------------------
+
+model RevenueCategory {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  transactions RevenueTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RevenueTransaction {
+  id          String          @id @default(cuid())
+  category    RevenueCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId  String
+  date        DateTime
+  amount      Decimal
+  description String          @default("")
+  method      PaymentMethod
+  reference   String          @default("")
+
+  recordedById String?
+  recordedAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// FINANCE — EXPENSES
+// ---------------------------------------------------------------------------
+
+model ExpenseCategory {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  expenses Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId  String
+  date        DateTime
+  amount      Decimal
+  description String          @default("")
+  method      PaymentMethod
+  reference   String          @default("")
+  receiptUrl  String?
+
+  // Set only for the auto-generated "Staff Salaries" expense created
+  // when a PayrollPeriod is marked PAID — see lib/finance.ts. Never
+  // set by a manually-entered expense.
+  payrollPeriod   PayrollPeriod? @relation(fields: [payrollPeriodId], references: [id], onDelete: SetNull)
+  payrollPeriodId String?        @unique
+
+  recordedById String?
+  recordedAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// FINANCE — PAYROLL
+// ---------------------------------------------------------------------------
+
+enum SalaryType {
+  MONTHLY
+  DAILY
+  HOURLY
+}
+
+// Salary HISTORY, not a single mutable field — a new row is created
+// each time a staff member's pay changes, so the record of what they
+// were paid and when is never lost. The current salary is the most
+// recent row with isActive true (see lib/finance.ts#currentSalaryFor).
+model Salary {
+  id            String     @id @default(cuid())
+  staff         Staff      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId       String
+  salaryType    SalaryType
+  baseSalary    Decimal
+  effectiveDate DateTime
+  isActive      Boolean    @default(true)
+
+  createdById String?
+  createdAt   DateTime @default(now())
+}
+
+enum PayrollPeriodStatus {
+  DRAFT
+  REVIEW
+  PROCESSED
+  PAID
+}
+
+model PayrollPeriod {
+  id     String              @id @default(cuid())
+  name   String // e.g. "January 2027"
+  month  Int // 1-12
+  year   Int
+  status PayrollPeriodStatus @default(DRAFT)
+
+  entries PayrollEntry[]
+  expense Expense?
+
+  createdById  String?
+  processedAt  DateTime?
+  paidAt       DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([month, year])
+}
+
+model PayrollEntry {
+  id              String        @id @default(cuid())
+  payrollPeriod   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  payrollPeriodId String
+  staff           Staff         @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  staffId         String
+  salarySnapshot  Decimal // gross base salary at time of entry, from Salary
+  deductions      Decimal       @default(0)
+  grossAmount     Decimal
+  netAmount       Decimal
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payrollPeriodId, staffId])
+}
+
+// Fixed-window rate limiting for public POST endpoints, backed by
+// Postgres rather than Redis (free-stack requirement — see
+// src/lib/public-guard.ts). One row per (ip, route, windowStart) bucket;
+// old rows are opportunistically deleted by the limiter itself.
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  ip          String
+  route       String
+  windowStart DateTime
+  count       Int      @default(1)
+
+  @@unique([ip, route, windowStart])
+}
+
+// ---------------------------------------------------------------------------
+// ACADEMICS — TEACHER ASSIGNMENTS, ATTENDANCE, EXAMS, RESULTS, GRADING,
+// REPORT CARDS & PROMOTION (Phase 4)
+// ---------------------------------------------------------------------------
+
+// "This teacher teaches this subject in this class." A teacher may
+// hold several of these; a class-subject may (rarely) have more than
+// one teacher over time, so this is a plain many-to-many join, not a
+// single nullable FK on ClassSubject — that would silently overwrite
+// history every time a subject changed hands mid-year.
+model TeacherSubject {
+  id             String       @id @default(cuid())
+  staff          Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId        String
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  classSubjectId String
+
+  assignedById String?
+  createdAt    DateTime @default(now())
+
+  @@unique([staffId, classSubjectId])
+  @@index([classSubjectId])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+// One row per student per calendar day (E1: not per class-subject —
+// a student is present/absent/late for the day as a whole). `class`
+// snapshots which class the student was in on that date so a later
+// promotion/transfer never rewrites history.
+model Attendance {
+  id             String           @id @default(cuid())
+  student        Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId      String
+  class          Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId        String
+  date           DateTime         @db.Date
+  status         AttendanceStatus
+  term           Term?            @relation(fields: [termId], references: [id], onDelete: SetNull)
+  termId         String?
+  academicYear   AcademicYear?    @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  academicYearId String?
+  note           String           @default("")
+
+  recordedById String?
+  recordedAt   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // E1: exactly one attendance record per student per day.
+  @@unique([studentId, date])
+  @@index([classId, date])
+}
+
+// Covers both "Examinations" and "Assessments" from the spec — a
+// Class Test, Quiz, Mid-Term or End-of-Term Exam are all the same
+// shape (name/type/class/subject/term/year/date), just with a
+// different `type` label and `weight`. `type` is a free-text field
+// deliberately (E2: configurable, not a hard-coded enum) — the UI
+// offers common defaults but an administrator can enter any label.
+model Assessment {
+  id             String       @id @default(cuid())
+  name           String // e.g. "Mid-Term Test", "End of Term Examination"
+  type           String // e.g. "Class Test", "Quiz", "Mid-Term", "Exam", "Project"
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  classSubjectId String
+  term           Term         @relation(fields: [termId], references: [id], onDelete: Restrict)
+  termId         String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  academicYearId String
+  date           DateTime
+  maxScore       Decimal      @default(100)
+  // Percentage weight this assessment contributes to the subject's
+  // overall term score (E3: several class tests + one exam can be
+  // combined into one term result — see lib/academics/grading.ts).
+  weight         Decimal      @default(100)
+
+  results Result[]
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([classSubjectId, termId, academicYearId])
+}
+
+// A single student's score on a single assessment. Marks are entered
+// by the teacher assigned to that class-subject (see
+// requireResultsAccess in lib/academics/authorize.ts) — never
+// editable by a teacher who isn't assigned to it, regardless of
+// other academics access they may have.
+model Result {
+  id           String     @id @default(cuid())
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessmentId String
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId    String
+  score        Decimal
+  remark       String     @default("")
+
+  enteredById String?
+  enteredAt   DateTime @default(now())
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([assessmentId, studentId])
+  @@index([studentId])
+}
+
+// Configurable grading bands ("E4: do not hard-code one grading
+// system") — an administrator defines as many bands as needed.
+// Non-overlap and full 0-100 coverage are enforced in application
+// code (lib/academics/grading.ts), not at the DB level, so an
+// in-progress edit (e.g. deleting one band before adding its
+// replacement) is never blocked by a DB constraint.
+model GradeScale {
+  id        String  @id @default(cuid())
+  minScore  Decimal
+  maxScore  Decimal
+  grade     String
+  remark    String  @default("")
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum PromotionDecision {
+  PROMOTE
+  RETAIN
+  GRADUATE
+  TRANSFER
+  WITHDRAW
+}
+
+enum PromotionBatchStatus {
+  DRAFT
+  CONFIRMED
+}
+
+// Prepare -> Review -> Confirm workflow (E5: never auto-promotes).
+// A DRAFT batch is a proposal only — PromotionRecord rows can be
+// edited freely while DRAFT. Confirming is the one action that
+// actually moves students (see lib/academics/promotion.ts), and is
+// irreversible by design (mirrors payroll's DRAFT->PAID pattern).
+model PromotionBatch {
+  id               String               @id @default(cuid())
+  fromClass        Class                @relation("PromotionFromClass", fields: [fromClassId], references: [id], onDelete: Restrict)
+  fromClassId      String
+  toAcademicYear   AcademicYear         @relation(fields: [toAcademicYearId], references: [id], onDelete: Restrict)
+  toAcademicYearId String
+  status           PromotionBatchStatus @default(DRAFT)
+
+  records PromotionRecord[]
+
+  createdById   String?
+  confirmedById String?
+  confirmedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([fromClassId, toAcademicYearId])
+}
+
+// One row per student in the batch. `toClass` is null for GRADUATE
+// and WITHDRAW decisions (there is no destination class); it is
+// required for PROMOTE/RETAIN/TRANSFER — enforced in
+// lib/academics/promotion.ts, not the DB, so a decision can be
+// changed freely while the batch is still DRAFT.
+model PromotionRecord {
+  id        String            @id @default(cuid())
+  batch     PromotionBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  batchId   String
+  student   Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  decision  PromotionDecision @default(PROMOTE)
+  toClass   Class?            @relation("PromotionToClass", fields: [toClassId], references: [id], onDelete: SetNull)
+  toClassId String?
+  note      String            @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, studentId])
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 5 — PARENT PORTAL, NOTIFICATIONS
+// ---------------------------------------------------------------------------
+
+/**
+ * Links a PARENT-role User to the Student(s) they may view in the
+ * Parent Portal. A parent can be linked to more than one child; a
+ * student can have more than one linked guardian account. This is the
+ * actual security boundary for the portal — every parent-portal query
+ * re-checks a Guardian row exists for (userId, studentId), the same
+ * way requireModuleAccess re-checks admin permissions on every call.
+ */
+model Guardian {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId    String
+  relationship String   @default("Parent/Guardian")
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, studentId])
+}
+
+enum NotificationType {
+  ADMISSION_PAYMENT
+  RESULTS_DEADLINE
+  REPORT_CARD
+  ANNOUNCEMENT
+  GENERAL
+}
+
+/**
+ * In-app notifications only (no paid SMS/WhatsApp integration — see
+ * Phase 5 spec). Targeted at a single User; bulk "notify this role"
+ * helpers in src/lib/notifications.ts fan out to one row per user.
+ */
+model Notification {
+  id        String           @id @default(cuid())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  type      NotificationType @default(GENERAL)
+  title     String
+  body      String           @default("")
+  link      String           @default("")
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+}

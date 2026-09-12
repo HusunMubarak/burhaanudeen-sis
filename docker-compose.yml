@@ -1,0 +1,21 @@
+# PostgreSQL — the default database for this project (see README).
+#
+#   1. docker compose up -d
+#   2. npm run db:generate && npm run db:migrate && npm run db:seed
+#   3. npm run dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: burhaanudeen
+      POSTGRES_PASSWORD: burhaanudeen
+      POSTGRES_DB: burhaanudeen_sis
+    ports:
+      - "5432:5432"
+    volumes:
+      - burhaanudeen_db_data:/var/lib/postgresql/data
+
+volumes:
+  burhaanudeen_db_data:
